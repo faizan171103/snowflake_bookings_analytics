@@ -20,3 +20,7 @@ CSV Data Ingestion
 Medallion Architecture (Bronze, Silver, Gold)
 Data Cleaning & Transformation
 Business Intelligence & Data Visualization
+
+
+<img width="2002" height="1064" alt="image" src="https://github.com/user-attachments/assets/86e1f388-ea66-4275-9f25-deb8a8300ad0" />
+
