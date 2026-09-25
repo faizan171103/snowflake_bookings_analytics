@@ -6,7 +6,18 @@
 
 An end-to-end data engineering platform built on **Snowflake**, using a **Bronze → Silver → Gold** Medallion Architecture to turn raw hotel booking CSVs into business-ready datasets for revenue, occupancy, and operational reporting in Power BI.
 
-Written for two audiences: as an **analytics engineer**, you'll find the cleaning rules and modeling decisions behind each layer; as a **business analyst**, you'll find the questions the Gold layer exists to answer and a framework for turning those answers into action.
+---
+
+## Platform at a glance
+
+| Metric | Value |
+|---|---|
+| Total Revenue | **$395.39K** |
+| Total Bookings | **1,187** |
+| Total Guests | **3,440** |
+| Average Booking Value | **$332.26** |
+| Revenue per Guest | **$114.84** |
+| Confirmed / Cancelled / No-Show | **41.5% / 31.1% / 27.1%** |
 
 ---
 
@@ -23,70 +34,77 @@ flowchart TD
     G --> H[Business Decisions]
 ```
 
----
-
-## Dashboard
-
-<img width="1844" alt="Bookings analytics dashboard" src="https://github.com/user-attachments/assets/49ef2d5c-efcf-4bca-a533-8a27e177245e" />
+The medallion pattern separates three concerns that are easy to tangle together: **fidelity to source** (Bronze), **correctness of values and types** (Silver), and **business meaning** (Gold). Each layer can be debugged and rebuilt independently.
 
 ---
 
-## analytics engineer: what each layer does and why
+## Dashboards
+
+**Hotel Booking Analysis**
+![Hotel Booking Analysis dashboard](powerbi/dashboard_screenshots/hotel_booking_analysis.png)
+
+**Revenue Analysis Dashboard**
+![Revenue Analysis dashboard](powerbi/dashboard_screenshots/revenue_analysis.png)
+
+*(Add your exported PNGs to `powerbi/dashboard_screenshots/` using the filenames above, or swap in your own GitHub-hosted asset links.)*
+
+---
+
+## For the analytics engineer
 
 **Bronze — land it, don't touch it**
-Raw booking CSVs are loaded into Snowflake exactly as received. No cleaning happens here — this is the layer you fall back to if a downstream rule turns out to be wrong, and it's the only place where "what did the source system actually send us" can be answered with certainty.
+Raw booking CSVs are loaded into Snowflake exactly as received, preserving a reprocessable source of truth if any downstream rule needs revisiting.
 
-**Silver — fix what's broken before anyone builds logic on top of it**
-This is where most of the real engineering effort lives. Rather than one generic "clean the data" step, each Silver transformation targets a specific failure mode seen in raw booking data:
+**Silver — fix specific, known failure modes**
+Rather than a generic "clean the data" pass, each Silver transformation targets a distinct issue observed in raw booking data:
 
 | Issue | Handling |
 |---|---|
-| Invalid or malformed dates | Parsed against expected formats; unparseable rows flagged rather than silently dropped |
-| Inconsistent booking status values (`"Confirmed"`, `"confirmed"`, `"CONF"`, etc.) | Standardized to a controlled vocabulary |
-| Malformed email addresses | Validated against a format check; invalid entries flagged, not guessed at |
-| Inconsistent text fields (city names, room types) | Trimmed, case-normalized, deduplicated against known variants |
-| Mixed or incorrect data types | Explicitly cast (dates, decimals, IDs) so Gold models never inherit ambiguous typing |
+| Invalid or malformed dates | Parsed against expected formats; unparseable rows flagged, not dropped |
+| Inconsistent booking status values | Standardized to a controlled vocabulary (`Confirmed`, `Cancelled`, `No-Show`) |
+| Malformed email addresses | Validated against a format check; invalid entries flagged |
+| Inconsistent text fields (city, room type) | Trimmed, case-normalized, deduplicated against known variants |
+| Mixed or incorrect data types | Explicitly cast so Gold models never inherit ambiguous typing |
 
-The principle: Gold models should never need a `TRIM()` or `CASE WHEN` to compensate for a value that should have been fixed upstream. If a Gold query needs defensive SQL, that's a sign a Silver rule is missing.
+**Gold — three tables, three jobs**
+- **Booking fact table** — one row per booking; the grain everything else rolls up from.
+- **Daily booking summary** — pre-aggregated for the revenue trend and volume reporting.
+- **City-level revenue aggregation** — pre-aggregated so Power BI isn't re-scanning the fact table for every geographic cut.
 
-**Gold — three tables, three different jobs**
-- **Booking fact table** — the clean, one-row-per-booking grain everything else rolls up from.
-- **Daily booking summary** — pre-aggregated for time-series reporting (revenue trend, booking volume) without repeatedly scanning the fact table.
-- **City-level revenue aggregation** — pre-aggregated for geographic reporting, so Power BI isn't doing city-level `GROUP BY`s over the full fact table on every dashboard load.
+**A data-quality gap worth flagging**
+`(Blank)` appears as a real segment in both `BOOKING_STATUS` and `ROOM_TYPE` — meaning a non-trivial share of records are missing a category value entirely. Before drawing firm conclusions from the status or room-type breakdowns, this should be traced back to Silver: is it a Bronze source gap, or a Silver transformation dropping values it doesn't recognize? Right now it's silently folded into the visuals rather than surfaced as a data-quality metric.
 
-Splitting these out isn't just performance — it also means "daily revenue" and "city revenue" each have exactly one definition, computed once, rather than being re-derived per Power BI visual (a mismatch this pattern is specifically designed to avoid).
-
----
-
-## business analys: what the Gold layer is built to answer
-
-The Gold tables map directly onto four business questions. Below is the analytical lens for each, with the kind of insight and recommendation the model is designed to surface — swap in your live numbers here once you've pulled them.
-
-### 1. Revenue trend (daily booking summary)
-**What to look for:** seasonality (weekday vs. weekend, holiday spikes), and any sudden drop that mirrors a booking-volume drop rather than a pricing change — that distinction tells you whether you have a demand problem or a pricing problem.
-**Typical recommendation:** if revenue dips track order-volume dips exactly, focus on demand generation (promotions, channel mix); if revenue dips while volume holds steady, focus on rate strategy (discounting, room-type mix shifting toward cheaper inventory).
-
-### 2. Booking performance & cancellations (booking fact table)
-**What to look for:** the cancellation/no-show rate by booking channel, lead time (days between booking and stay), and room type. A high cancellation rate concentrated in long-lead-time bookings usually points to a different problem (weak booking confirmation flow, no deposit) than one concentrated in a single channel (a specific OTA driving low-intent bookings).
-**Typical recommendation:** if cancellations cluster by lead time, test a deposit or confirmation-reminder flow; if they cluster by channel, revisit that channel's terms or targeting rather than treating cancellations as a platform-wide issue.
-
-### 3. Room type analysis
-**What to look for:** revenue contribution vs. occupancy rate per room type — a room type can look like a strong revenue driver purely because it's priced high, while actually sitting at low occupancy. The two metrics side by side (not revenue alone) tell you where real demand is.
-**Typical recommendation:** high-price/low-occupancy room types are candidates for dynamic pricing or bundling; high-occupancy/lower-price types are candidates for a modest rate increase — occupancy this consistent usually has room to absorb it.
-
-### 4. City-level revenue
-**What to look for:** revenue per booking (not just total revenue) by city — a city with fewer total bookings but higher average revenue per booking may be a better expansion target than a high-volume, low-margin city.
-**Typical recommendation:** prioritize marketing spend toward cities with strong revenue-per-booking rather than raw booking count, and treat high-volume/low-margin cities as an operational-efficiency problem rather than a growth one.
+**Two dashboards, one inconsistency to reconcile**
+The *Revenue by City* chart caps at roughly $2K for the top city, while *Top 10 Highest Revenue Bookings* lists individual bookings around $600 each. These are consistent with each other, but the fact that the two pages don't share a common table (one aggregates by city, one lists top individual bookings) is exactly the kind of thing a shared Power BI semantic model — built directly on the Gold fact table — would prevent from drifting apart as more pages are added.
 
 ---
 
-## A framework for the three levers: sales, retention, satisfaction
+## For the data analyst: key findings
 
-Once this is running against live data, these are the specific cuts worth building next — in rough order of leverage:
+**1. Booking failure is the largest problem on the dashboard, not a secondary one.**
+Of 1,187 bookings, only 494 (41.5%) are Confirmed. 370 (31.1%) are Cancelled and 323 (27.1%) are No-Shows — a **58.2% combined failure rate**. At the current average booking value of $332.26, that's roughly **$230K in unrealized revenue**, nearly matching the $395.39K actually booked.
 
-- **Sales / revenue** — daily summary × room type is the fastest way to spot whether growth should come from more bookings or better rates. Start here because it's already in Gold.
-- **Retention** — repeat-guest rate isn't in the current model. Adding a `guest_id`-based repeat-stay flag to the fact table would let you answer "what share of revenue comes from returning guests," which is typically the highest-leverage number in a hospitality dataset, the same way it was for retail.
-- **Satisfaction** — there's no review or post-stay feedback table yet. If that data exists anywhere (survey tool, OTA reviews), joining it to `booking_id` would let cancellation rate, room type, and city all be checked against satisfaction rather than revenue alone — protecting against a strategy that grows revenue while quietly eroding guest experience.
+**2. There is no premium tier — growth is entirely volume-driven.**
+Average booking value is $332.26, but the **top 10 highest-revenue bookings cap out at $600 each**, totaling just $7,781. With no meaningful spread above the average, there's no segment currently doing extra revenue work beyond the base room rate.
+
+**3. Room type demand is nearly even, with no entrenched price sensitivity.**
+Suite 34.5%, Standard 33.5%, Deluxe 31.9% — guests aren't defaulting to the cheapest option. That balance suggests upsell messaging at the point of booking has real room to shift the mix upward rather than fighting an existing preference for Standard.
+
+**4. Revenue is a long tail across a large number of small markets.**
+Even the top city (East Michael) sits under $2K of the $395K total — under 0.5% of total revenue from the single best-performing market. A handful of cities (East Michael, Port Jeffrey, East Matthew, North James, Lake John) show consistent, repeatable volume; the rest of the city list trails off sharply.
+
+**5. Revenue is volatile with no clean seasonal shape.**
+Monthly revenue swings roughly between $30K and $41K, peaking in **May** and **October**, dipping in **June, July, and September**. The pattern looks more like campaign- or event-driven spikes than a natural seasonal curve — worth confirming against a marketing/promo calendar rather than assumed as "high season."
+
+---
+
+## Recommendations, ranked by expected impact
+
+1. **Attack the 58% cancellation/no-show rate first.** Require a deposit or partial prepayment, send automated pre-arrival confirmation reminders, and introduce a tiered cancellation policy. Recovering even 10 points of that rate (58% → 48%) is worth an estimated **~$40K** in additional realized revenue without acquiring a single new customer.
+2. **Build a real premium tier.** With no booking clearing $600, introduce bundled packages — late checkout, breakfast, room upgrades, extended stay — priced meaningfully above the $332 average. This is AOV lift on demand that already exists.
+3. **Reverse-engineer May and October**, then replicate whatever drove those peaks; separately diagnose the June/July/September troughs rather than treating them as expected seasonal noise.
+4. **Concentrate marketing and inventory effort in proven cities** (East Michael, Port Jeffrey, East Matthew, North James, Lake John) instead of spreading spend thin across hundreds of near-zero-revenue markets.
+5. **Close the `(Blank)` data-quality gap** in booking status and room type before these fields are used for any further segmentation — an engineering fix that directly improves the reliability of every finding above it.
 
 ---
 
@@ -117,11 +135,18 @@ snowflake_bookings_analytics/
 
 ---
 
-## What I'd improve next
+## Getting started
 
-- **A repeat-guest / retention model** — the single highest-leverage table missing from Gold, as noted above.
-- **A satisfaction or review dimension** joined to `booking_id`, so revenue and satisfaction can be evaluated together rather than revenue alone driving decisions.
-- **Automated Silver-layer data quality tests** (row counts, null checks, accepted-value checks on `booking_status`) running on every load rather than relying on manual review.
+```bash
+# Clone
+git clone https://github.com/faizan171103/snowflake_bookings_analytics.git
+cd snowflake_bookings_analytics
+
+# Run Bronze load scripts, then Silver, then Gold transformations
+# (see sql/bronze, sql/silver, sql/gold)
+
+# Connect Power BI directly to the Gold layer tables in Snowflake
+
 
 ---
 
