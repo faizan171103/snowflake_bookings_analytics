@@ -36,21 +36,7 @@ flowchart TD
 
 The medallion pattern separates three concerns that are easy to tangle together: **fidelity to source** (Bronze), **correctness of values and types** (Silver), and **business meaning** (Gold). Each layer can be debugged and rebuilt independently.
 
----
-
-## Dashboards
-
-**Hotel Booking Analysis**
-![Hotel Booking Analysis dashboard](powerbi/dashboard_screenshots/hotel_booking_analysis.png)
-
-**Revenue Analysis Dashboard**
-![Revenue Analysis dashboard](powerbi/dashboard_screenshots/revenue_analysis.png)
-
-*(Add your exported PNGs to `powerbi/dashboard_screenshots/` using the filenames above, or swap in your own GitHub-hosted asset links.)*
-
----
-
-## For the analytics engineer
+##  Analytics engineer
 
 **Bronze — land it, don't touch it**
 Raw booking CSVs are loaded into Snowflake exactly as received, preserving a reprocessable source of truth if any downstream rule needs revisiting.
@@ -78,8 +64,20 @@ Rather than a generic "clean the data" pass, each Silver transformation targets 
 The *Revenue by City* chart caps at roughly $2K for the top city, while *Top 10 Highest Revenue Bookings* lists individual bookings around $600 each. These are consistent with each other, but the fact that the two pages don't share a common table (one aggregates by city, one lists top individual bookings) is exactly the kind of thing a shared Power BI semantic model — built directly on the Gold fact table — would prevent from drifting apart as more pages are added.
 
 ---
+---
 
-## For the data analyst: key findings
+## Dashboards
+
+**Hotel Booking Analysis**
+<img width="2022" height="1138" alt="image" src="https://github.com/user-attachments/assets/6e9758e5-9137-460a-a4be-520ae80b82fc" />
+
+
+**Revenue Analysis Dashboard**
+<img width="1996" height="1182" alt="image" src="https://github.com/user-attachments/assets/c865624e-cf5b-482e-b2fe-6fe35e81c8c0" />
+
+
+
+## Data analyst: key findings
 
 **1. Booking failure is the largest problem on the dashboard, not a secondary one.**
 Of 1,187 bookings, only 494 (41.5%) are Confirmed. 370 (31.1%) are Cancelled and 323 (27.1%) are No-Shows — a **58.2% combined failure rate**. At the current average booking value of $332.26, that's roughly **$230K in unrealized revenue**, nearly matching the $395.39K actually booked.
