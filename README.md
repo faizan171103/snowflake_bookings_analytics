@@ -31,7 +31,7 @@ flowchart TD
 
 ---
 
-## For the analytics engineer: what each layer does and why
+## analytics engineer: what each layer does and why
 
 **Bronze — land it, don't touch it**
 Raw booking CSVs are loaded into Snowflake exactly as received. No cleaning happens here — this is the layer you fall back to if a downstream rule turns out to be wrong, and it's the only place where "what did the source system actually send us" can be answered with certainty.
@@ -58,7 +58,7 @@ Splitting these out isn't just performance — it also means "daily revenue" and
 
 ---
 
-## For the business analyst: what the Gold layer is built to answer
+## business analys: what the Gold layer is built to answer
 
 The Gold tables map directly onto four business questions. Below is the analytical lens for each, with the kind of insight and recommendation the model is designed to surface — swap in your live numbers here once you've pulled them.
 
